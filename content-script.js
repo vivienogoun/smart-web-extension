@@ -8,11 +8,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // When asked, extract the visible text from the page and send it back.
     const pageText = document.body.innerText;
     sendResponse({ textContent: pageText });
+  } else if (request.action === 'getSelectedText') {
+    const sel = window.getSelection?.().toString() || '';
+    sendResponse({ text: sel });
   } else if (request.action === "highlightText") {
     // When receiving highlight data, perform the highlighting.
     console.log("Highlights received:", request.highlights);
     highlightPhrases(request.highlights);
   }
+});
+
+// Notify the extension when the user changes selection on the page (throttled)
+let selectionTimer = null;
+function notifySelectionChanged() {
+  const sel = window.getSelection?.().toString() || '';
+  try {
+    // send only the selected text; the service worker will use sender.tab.id as the tab identifier
+    chrome.runtime.sendMessage({ action: 'forwardSelectionUpdate', text: sel });
+  } catch (e) {
+    // ignore
+  }
+}
+
+document.addEventListener('selectionchange', () => {
+  if (selectionTimer) clearTimeout(selectionTimer);
+  selectionTimer = setTimeout(() => {
+    notifySelectionChanged();
+    selectionTimer = null;
+  }, 200);
 });
 
 /**

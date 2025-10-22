@@ -20,6 +20,21 @@ const HIGHLIGHT_SCHEMA = {
 // 1. Open the side panel when the extension icon is clicked.
 chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ windowId: tab.windowId });
+  // Inject content script into all tabs in the current window so selectionchange handlers are present
+  (async () => {
+    try {
+      const tabs = await chrome.tabs.query({ windowId: tab.windowId });
+      for (const t of tabs) {
+        try {
+          await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["content-script.js"] });
+        } catch (e) {
+          // ignore injection errors for restricted pages
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  })();
 });
 
 // 2. Listen for messages from the side panel.
@@ -27,13 +42,74 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case "processPage":
       console.log("Service Worker received 'processPage' request.");
-      handlePageProcessing(message.prompt);
+      // message may include structured contexts or a full prompt
+      handlePageProcessing(message.prompt, message.contexts);
       break;
 
     case "checkAIModelStatus":
       console.log("Service Worker received 'checkAIModelStatus' request.");
       checkModelStatus();
       break;
+    case "listTabs":
+      (async () => {
+        try {
+          const tabs = await chrome.tabs.query({ currentWindow: true });
+          const mapped = tabs.map((t) => ({ id: t.id, title: t.title, url: t.url, favIconUrl: t.favIconUrl }));
+          sendResponse({ tabs: mapped });
+        } catch (e) {
+          sendResponse({ error: e?.message || 'failed' });
+        }
+      })();
+      return true;
+    case "getTabText":
+      (async () => {
+        try {
+          const tabId = message.tabId;
+          // Ensure content script is injected
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] }).catch(() => {});
+          const res = await chrome.tabs.sendMessage(tabId, { action: 'getTextContent' });
+          sendResponse({ text: res?.textContent || '' });
+        } catch (e) {
+          sendResponse({ error: e?.message || 'failed' });
+        }
+      })();
+      return true;
+    case "getSelectedText":
+      (async () => {
+        try {
+          const tabId = message.tabId;
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] }).catch(() => {});
+          const res = await chrome.tabs.sendMessage(tabId, { action: 'getSelectedText' });
+          sendResponse({ text: res?.text || '' });
+        } catch (e) {
+          sendResponse({ error: e?.message || 'failed' });
+        }
+      })();
+      return true;
+    case 'forwardSelectionUpdate':
+      // Forward selection updates to any open side panel (it listens for 'selectionUpdate')
+      // Use sender.tab.id if the sender didn't include a tabId (content scripts don't need to know tabId).
+      const forwardedTabId = message.tabId ?? (sender && sender.tab && sender.tab.id) ?? null;
+      chrome.runtime.sendMessage({ action: 'selectionUpdate', tabId: forwardedTabId, text: message.text }).catch(()=>{});
+      sendResponse({ ok: true });
+      return true;
+    case 'injectContentScripts':
+      (async () => {
+        try {
+          const tabs = await chrome.tabs.query({ currentWindow: true });
+          for (const t of tabs) {
+            try {
+              await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["content-script.js"] });
+            } catch (e) {
+              // ignore errors for restricted pages
+            }
+          }
+          sendResponse({ ok: true });
+        } catch (e) {
+          sendResponse({ error: e?.message || 'failed' });
+        }
+      })();
+      return true;
   }
   return true; // Indicates we will respond asynchronously.
 });
@@ -79,37 +155,51 @@ async function checkModelStatus() {
 async function handlePageProcessing(prompt) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return console.error("No active tab found.");
+  // If structured contexts were provided, fetch texts for them; otherwise fall back to active tab text
+  let assembledText = '';
+  try {
+    if (messageHasContexts(prompt, arguments[1])) {
+      // If the caller passed contexts as structured data (array of {tabId, type, text})
+      const contexts = arguments[1] || [];
+      const pieces = [];
+      for (const c of contexts) {
+        if (c.type === 'selection') {
+          pieces.push(`SELECTION CONTEXT (from tab ${c.tabId}):\n${truncate(c.text || '')}`);
+        } else if (c.type === 'tab') {
+          // fetch tab text
+          const res = await new Promise((resolve) => chrome.runtime.sendMessage({ action: 'getTabText', tabId: c.tabId }, resolve));
+          pieces.push(`PAGE CONTEXT (${c.title || c.url}):\n${truncate(res?.text || '')}`);
+        }
+      }
+      assembledText = pieces.join('\n\n');
+    } else {
+      // Default: get active tab text
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content-script.js"] }).catch(() => {});
+      const response = await chrome.tabs.sendMessage(tab.id, { action: "getTextContent" });
+      assembledText = response?.textContent || '';
+    }
 
-  // Inject content script to get text
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ["content-script.js"],
-  });
+    const aiResult = await processWithAI(assembledText, prompt);
 
-  // Get text from the content script
-  const response = await chrome.tabs.sendMessage(tab.id, {
-    action: "getTextContent",
-  });
-
-  if (response && response.textContent) {
-    // Now that we have the text, process it directly in the service worker
-    const aiResult = await processWithAI(response.textContent, prompt);
-
-    // Send the result to the content script for highlighting
     if (aiResult && aiResult.highlights) {
       chrome.tabs.sendMessage(tab.id, {
         action: "highlightText",
         highlights: aiResult.highlights,
       });
     }
-  } else {
-    console.error("Could not get text content from the page.");
-    chrome.runtime.sendMessage({
-      action: "ai-status-update",
-      status: "unavailable",
-      error: "Could not read page.",
-    });
+  } catch (e) {
+    console.error('Error in handlePageProcessing:', e);
+    chrome.runtime.sendMessage({ action: 'ai-status-update', status: 'unavailable', error: e?.message });
   }
+}
+
+function messageHasContexts(promptArg, contextsArg) {
+  return Array.isArray(arguments[1]) || Array.isArray(contextsArg);
+}
+
+function truncate(s, n = 4000) {
+  if (!s) return '';
+  return s.substring(0, n);
 }
 
 /**
