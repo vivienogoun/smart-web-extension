@@ -8,6 +8,7 @@ An AI-powered Chrome extension that helps you read, comprehend, and refine web c
 - 📝 **Content Highlighting**: Highlight specific information like dates, names, or any other data
 - 🎨 **Side Panel Interface**: Clean, intuitive interface accessible from any tab
 - ⚡ **Real-time Processing**: Instantly process and modify page content based on your commands
+- 🧠 **Automatic Context Capture**: Text selections from supported pages are added to the conversation context without extra clicks
 
 ## Project Structure
 
@@ -85,6 +86,16 @@ If you haven't already, download or clone this repository to your local machine.
 3. Go to `chrome://extensions/`
 4. Click the refresh icon (🔄) on the "Contextual Browser Agent" card
 5. Reload any open tabs where you want to test the changes
+
+### Styling with Tailwind CSS
+
+This project uses a local Tailwind build so the extension only ships the purged stylesheet.
+
+1. Install dependencies once with `npm install`
+2. Generate the production stylesheet with `npm run build:css`
+3. During active development, run `npm run watch:css` to rebuild on every save
+
+The compiled file `sidepanel.css` is linked from `sidepanel.html`.
 
 ### File Descriptions
 

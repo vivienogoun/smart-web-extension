@@ -1,80 +1,78 @@
-// content-script.js
+(() => {
+  if (window.__contextualAgentContentScriptLoaded) return;
+  window.__contextualAgentContentScriptLoaded = true;
 
-// This script is injected into the webpage and can directly interact with the DOM.
+  const LOG_PREFIX = "[Contextual Agent]";
+  const SELECTION_DEBOUNCE_MS = 200;
+  let selectionTimer = null;
 
-// Listen for messages from the service worker.
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "getTextContent") {
-    // When asked, extract the visible text from the page and send it back.
-    const pageText = document.body.innerText;
-    sendResponse({ textContent: pageText });
-  } else if (request.action === 'getSelectedText') {
-    const sel = window.getSelection?.().toString() || '';
-    sendResponse({ text: sel });
-  } else if (request.action === "highlightText") {
-    // When receiving highlight data, perform the highlighting.
-    console.log("Highlights received:", request.highlights);
-    highlightPhrases(request.highlights);
-  }
-});
-
-// Notify the extension when the user changes selection on the page (throttled)
-let selectionTimer = null;
-function notifySelectionChanged() {
-  const sel = window.getSelection?.().toString() || '';
-  try {
-    // send only the selected text; the service worker will use sender.tab.id as the tab identifier
-    chrome.runtime.sendMessage({ action: 'forwardSelectionUpdate', text: sel });
-  } catch (e) {
-    // ignore
-  }
-}
-
-document.addEventListener('selectionchange', () => {
-  if (selectionTimer) clearTimeout(selectionTimer);
-  selectionTimer = setTimeout(() => {
-    notifySelectionChanged();
-    selectionTimer = null;
-  }, 200);
-});
-
-/**
- * Finds and highlights specific phrases on the page.
- * @param {string[]} phrases - An array of exact phrases to highlight.
- */
-function highlightPhrases(phrases) {
-  if (!phrases || phrases.length === 0) return;
-
-  // A simple (but not perfect) way to highlight.
-  // It finds the first occurrence of each phrase.
-  // A more robust solution would use a TreeWalker and handle overlapping phrases.
-
-  const content = document.body.innerHTML;
-  let newContent = content;
-
-  phrases.forEach((phrase) => {
-    // Use a regular expression to find all occurrences of the phrase.
-    // The 'gi' flags make it global (find all) and case-insensitive.
-    const regex = new RegExp(escapeRegExp(phrase), "gi");
-    newContent = newContent.replace(
-      regex,
-      (match) =>
-        `<mark style="background-color: yellow; color: black;">${match}</mark>`
-    );
+  chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+    switch (request.action) {
+      case "getTextContent":
+        sendResponse({ textContent: getVisibleText() });
+        break;
+      case "getSelectedText":
+        sendResponse({ text: getWindowSelection() });
+        break;
+      case "highlightText":
+        applyHighlights(request.highlights || []);
+        break;
+      default:
+        break;
+    }
   });
 
-  if (newContent !== content) {
-    document.body.innerHTML = newContent;
+  document.addEventListener("selectionchange", () => {
+    if (selectionTimer) clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(dispatchSelectionUpdate, SELECTION_DEBOUNCE_MS);
+  });
+
+  console.log(`${LOG_PREFIX} content script loaded.`);
+
+  function getVisibleText() {
+    return document.body?.innerText ?? "";
   }
-}
 
-/**
- * Escapes special characters in a string for use in a regular expression.
- * @param {string} string - The string to escape.
- * @returns {string} The escaped string.
- */
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+  function getWindowSelection() {
+    return window.getSelection?.().toString() ?? "";
+  }
 
-console.log("Contextual Agent content script loaded.");
+  function dispatchSelectionUpdate() {
+    selectionTimer = null;
+    const text = getWindowSelection();
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    try {
+      console.debug(`${LOG_PREFIX} sending selection update`, trimmed.slice(0, 80));
+      chrome.runtime.sendMessage({ action: "selectionUpdate", text, timestamp: Date.now() });
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} failed to send selection update`, error);
+    }
+  }
+
+  function applyHighlights(phrases) {
+    if (!Array.isArray(phrases) || !phrases.length) return;
+
+    const originalHtml = document.body?.innerHTML;
+    if (!originalHtml) return;
+
+    let highlighted = originalHtml;
+    phrases.forEach((phrase) => {
+      if (!phrase) return;
+      const regex = new RegExp(escapeRegExp(String(phrase)), "gi");
+      highlighted = highlighted.replace(
+        regex,
+        (match) => `<mark style="background-color: yellow; color: black;">${match}</mark>`
+      );
+    });
+
+    if (highlighted !== originalHtml) {
+      document.body.innerHTML = highlighted;
+    }
+  }
+
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+})();
