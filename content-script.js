@@ -15,14 +15,16 @@
         sendResponse({ text: getWindowSelection() });
         break;
       case "highlightText":
-        applyHighlights(request.highlights || []);
-        sendResponse({ ok: true });
+        sendResponse(applyHighlights(request.highlights || []));
         break;
       case "insertDraft":
         sendResponse(insertDraftIntoDocument(request.draft));
         break;
       case "replaceSelection":
         sendResponse(replaceSelectionWithText(request.text));
+        break;
+      case "resetDom":
+        sendResponse(resetDomMarkers());
         break;
       default:
         break;
@@ -62,7 +64,7 @@
   function applyHighlights(phrases) {
     if (!Array.isArray(phrases) || !document.body) {
       clearPreviousHighlights();
-      return;
+      return { ok: true, count: 0 };
     }
 
     const validPhrases = phrases
@@ -73,15 +75,18 @@
     clearPreviousHighlights();
 
     if (!validPhrases.length) {
-      return;
+      return { ok: true, count: 0 };
     }
 
+    let totalCount = 0;
     const seen = new Set();
     validPhrases.forEach((phrase) => {
       if (seen.has(phrase.toLowerCase())) return;
       seen.add(phrase.toLowerCase());
-      highlightPhrase(phrase);
+      totalCount += highlightPhrase(phrase);
     });
+
+    return { ok: true, count: totalCount };
   }
 
   function clearPreviousHighlights() {
@@ -100,8 +105,9 @@
 
   function highlightPhrase(rawPhrase) {
     const phrase = String(rawPhrase ?? "").trim();
-    if (!phrase || phrase.length === 0 || !document.body) return;
+    if (!phrase || phrase.length === 0 || !document.body) return 0;
 
+    let matchCount = 0;
     const phraseLength = phrase.length;
     const phraseLower = phrase.toLowerCase();
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
@@ -127,9 +133,12 @@
         if (matchIndex === -1) break;
 
         currentNode = wrapMatch(currentNode, matchIndex, phraseLength);
+        if (currentNode) matchCount++;
         if (!currentNode) break;
       }
     }
+
+    return matchCount;
   }
 
   function wrapMatch(node, start, length) {
@@ -162,11 +171,11 @@
     }
 
     if (insertIntoActiveElement(text)) {
-      return { ok: true };
+      return { ok: true, method: "editable" };
     }
 
     if (replaceSelectionRange(text)) {
-      return { ok: true };
+      return { ok: true, method: "selection" };
     }
 
     return { fallback: "clipboard", text };
@@ -179,10 +188,20 @@
     }
 
     if (replaceSelectionRange(text)) {
-      return { ok: true };
+      return { ok: true, method: "selection" };
     }
 
     return { fallback: "clipboard", text };
+  }
+
+  function resetDomMarkers() {
+    try {
+      clearPreviousHighlights();
+      return { ok: true };
+    } catch (error) {
+      console.error(`${LOG_PREFIX} failed to reset DOM markers`, error);
+      return { error: error.message || "Failed to reset markers" };
+    }
   }
 
   function insertIntoActiveElement(text) {

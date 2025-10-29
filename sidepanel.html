@@ -28,6 +28,15 @@
 
       <section class="response-section" aria-live="polite">
         <h2 class="response-title">AI response</h2>
+        <div id="thinking-block" class="thinking-block hidden">
+          <div class="thinking-header">
+            <span class="thinking-title">Thinking...</span>
+            <div class="thinking-dots">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          <div id="thinking-context" class="thinking-context"></div>
+        </div>
         <div id="response-area" class="response-area"></div>
       </section>
 
@@ -50,9 +59,9 @@
             </div>
             <textarea
               id="prompt-input"
-              placeholder="Ask a question about this page..."
+              placeholder="Ask about this page… (e.g., 'Summarize', 'Draft a reply')"
               rows="3"
-              aria-label="Ask a question about this page"
+              aria-label="Ask about this page"
             ></textarea>
             <div class="prompt-toolbar" aria-hidden="true">
               <button type="button" class="icon-button" tabindex="-1">
