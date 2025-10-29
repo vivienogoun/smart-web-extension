@@ -10,7 +10,26 @@
     <div class="panel-shell">
       <div class="status-bar">
         <span id="status" class="status-text" aria-live="polite"></span>
+        <div class="status-actions">
+          <button type="button" id="stop-button" class="status-btn" style="display: none;" title="Stop generation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <rect x="6" y="6" width="12" height="12" fill="currentColor" />
+            </svg>
+            Stop
+          </button>
+          <button type="button" id="reset-button" class="status-btn" title="Reset conversation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M4 12a8 8 0 0 1 14.93-4M20 12a8 8 0 0 1-14.93 4M4 8v4h4M20 16v-4h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Reset
+          </button>
+        </div>
       </div>
+
+      <section class="response-section" aria-live="polite">
+        <h2 class="response-title">AI response</h2>
+        <div id="response-area" class="response-area"></div>
+      </section>
 
       <div class="composer-card">
         <div class="context-section">

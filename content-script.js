@@ -16,10 +16,18 @@
         break;
       case "highlightText":
         applyHighlights(request.highlights || []);
+        sendResponse({ ok: true });
+        break;
+      case "insertDraft":
+        sendResponse(insertDraftIntoDocument(request.draft));
+        break;
+      case "replaceSelection":
+        sendResponse(replaceSelectionWithText(request.text));
         break;
       default:
         break;
     }
+    return true;
   });
 
   document.addEventListener("selectionchange", () => {
@@ -52,27 +60,184 @@
   }
 
   function applyHighlights(phrases) {
-    if (!Array.isArray(phrases) || !phrases.length) return;
+    if (!Array.isArray(phrases) || !document.body) {
+      clearPreviousHighlights();
+      return;
+    }
 
-    const originalHtml = document.body?.innerHTML;
-    if (!originalHtml) return;
+    const validPhrases = phrases
+      .map((phrase) => (typeof phrase === "string" ? phrase : String(phrase ?? "")))
+      .map((phrase) => phrase.trim())
+      .filter(Boolean);
 
-    let highlighted = originalHtml;
-    phrases.forEach((phrase) => {
-      if (!phrase) return;
-      const regex = new RegExp(escapeRegExp(String(phrase)), "gi");
-      highlighted = highlighted.replace(
-        regex,
-        (match) => `<mark style="background-color: yellow; color: black;">${match}</mark>`
-      );
+    clearPreviousHighlights();
+
+    if (!validPhrases.length) {
+      return;
+    }
+
+    const seen = new Set();
+    validPhrases.forEach((phrase) => {
+      if (seen.has(phrase.toLowerCase())) return;
+      seen.add(phrase.toLowerCase());
+      highlightPhrase(phrase);
+    });
+  }
+
+  function clearPreviousHighlights() {
+    document
+      .querySelectorAll("mark[data-contextual-agent-highlight]")
+      .forEach((mark) => {
+        const parent = mark.parentNode;
+        if (!parent) return;
+        while (mark.firstChild) {
+          parent.insertBefore(mark.firstChild, mark);
+        }
+        parent.removeChild(mark);
+        parent.normalize();
+      });
+  }
+
+  function highlightPhrase(rawPhrase) {
+    const phrase = String(rawPhrase ?? "").trim();
+    if (!phrase || phrase.length === 0 || !document.body) return;
+
+    const phraseLength = phrase.length;
+    const phraseLower = phrase.toLowerCase();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (!node.data || !node.data.trim()) return NodeFilter.FILTER_REJECT;
+        if (parent.closest("mark[data-contextual-agent-highlight]")) return NodeFilter.FILTER_REJECT;
+        if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
     });
 
-    if (highlighted !== originalHtml) {
-      document.body.innerHTML = highlighted;
+    while (walker.nextNode()) {
+      let currentNode = walker.currentNode;
+      if (!currentNode?.data) continue;
+
+      while (currentNode?.data) {
+        const nodeDataLower = currentNode.data.toLowerCase();
+        const matchIndex = nodeDataLower.indexOf(phraseLower);
+        if (matchIndex === -1) break;
+
+        currentNode = wrapMatch(currentNode, matchIndex, phraseLength);
+        if (!currentNode) break;
+      }
     }
   }
 
-  function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function wrapMatch(node, start, length) {
+    if (!node || typeof node.splitText !== "function" || length <= 0) {
+      return null;
+    }
+
+    const matchNode = node.splitText(start);
+    const afterNode = matchNode.splitText(length);
+    const mark = document.createElement("mark");
+    mark.dataset.contextualAgentHighlight = "true";
+    mark.style.backgroundColor = "yellow";
+    mark.style.color = "black";
+
+    const parent = matchNode.parentNode;
+    if (!parent) {
+      return afterNode;
+    }
+
+    parent.insertBefore(mark, matchNode);
+    mark.appendChild(matchNode);
+
+    return afterNode;
+  }
+
+  function insertDraftIntoDocument(draft) {
+    const text = coerceString(draft);
+    if (!text) {
+      return { error: "Draft is empty." };
+    }
+
+    if (insertIntoActiveElement(text)) {
+      return { ok: true };
+    }
+
+    if (replaceSelectionRange(text)) {
+      return { ok: true };
+    }
+
+    return { fallback: "clipboard", text };
+  }
+
+  function replaceSelectionWithText(nextText) {
+    const text = coerceString(nextText);
+    if (!text) {
+      return { error: "No text to insert." };
+    }
+
+    if (replaceSelectionRange(text)) {
+      return { ok: true };
+    }
+
+    return { fallback: "clipboard", text };
+  }
+
+  function insertIntoActiveElement(text) {
+    const activeElement = document.activeElement;
+    if (!activeElement) return false;
+
+    if (isTextInput(activeElement)) {
+      const start = activeElement.selectionStart ?? activeElement.value.length;
+      const end = activeElement.selectionEnd ?? activeElement.value.length;
+      const value = String(activeElement.value ?? "");
+      activeElement.value = value.slice(0, start) + text + value.slice(end);
+      const cursor = start + text.length;
+      activeElement.selectionStart = activeElement.selectionEnd = cursor;
+      activeElement.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    }
+
+    if (isContentEditable(activeElement)) {
+      return replaceSelectionRange(text, activeElement);
+    }
+
+    return false;
+  }
+
+  function replaceSelectionRange(text, root = document.body) {
+    const selection = window.getSelection?.();
+    if (!selection || selection.rangeCount === 0) return false;
+
+    const range = selection.getRangeAt(0);
+    if (!root.contains(range.commonAncestorContainer)) {
+      return false;
+    }
+
+    range.deleteContents();
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  }
+
+  function isTextInput(element) {
+    if (!element || element.disabled || element.readOnly) return false;
+    const tag = element.tagName;
+    return tag === "TEXTAREA" || (tag === "INPUT" && /^(?:text|search|email|url|tel)$/i.test(element.type || "text"));
+  }
+
+  function isContentEditable(element) {
+    return Boolean(element?.isContentEditable);
+  }
+
+  function coerceString(value) {
+    if (value == null) return "";
+    return typeof value === "string" ? value : String(value);
   }
 })();
