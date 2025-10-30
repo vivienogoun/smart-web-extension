@@ -1,157 +1,196 @@
-# Contextual Browser Agent
+# SmartWeb
 
-An AI-powered Chrome extension that helps you read, comprehend, and refine web content directly in your browser. This extension provides a side panel where you can interact with web pages using natural language commands.
+**SmartWeb** is a Chrome Extension that brings built-in AI capabilities directly into any browsing experience. It allows users to *chat with their tabs*, summarize content, write or rewrite text, and take contextual actions using Chrome’s on-device Gemini Nano model  all privately, locally, and in real time.
 
-## Features
+---
 
-- 🤖 **AI-Powered Content Processing**: Use natural language to interact with web content
-- 📝 **Content Highlighting**: Highlight specific information like dates, names, or any other data
-- 🎨 **Side Panel Interface**: Clean, intuitive interface accessible from any tab
-- ⚡ **Real-time Processing**: Instantly process and modify page content based on your commands
-- 🧠 **Automatic Context Capture**: Text selections from supported pages are added to the conversation context without extra clicks
+##  Overview
 
-## Project Structure
+###  Purpose
+
+Most AI browsers like Arc, Atlas, and Perplexity Comet are powerful but limited  available only for macOS or specific ecosystems. SmartWeb solves this by making AI assistance universal and browser-agnostic.
+
+**SmartWeb turns any browser into an intelligent workspace**. It empowers users to:
+
+* Summarize or explain what’s on a page.
+* Write, proofread, or rephrase text in context.
+* Extract, analyze, or highlight data automatically.
+* Chat naturally with web pages  all processed locally using **Chrome’s built-in AI APIs**.
+
+This project was built for the **Chrome Built-in AI Hackathon 2025**.
+
+---
+
+##  Features
+
+*  **Chat With Tabs** – Use natural language to ask questions or make requests about the current page.
+* ⚡ **On-Device AI (Gemini Nano)** – Runs fully on Chrome’s local built-in model for private, offline-capable processing.
+*  **Chrome Side Panel Integration** – Seamlessly accessible on any tab, without cluttering your browsing experience.
+*  **Automatic Context Awareness** – The extension understands which page you’re on and keeps a per-tab conversation memory.
+*  **Smart Writing Tools** – Generate drafts, comments, summaries, or rephrasings instantly.
+*  **Highlight and Extract** – Find key data such as dates, names, and keywords through AI queries.
+
+---
+
+##  APIs Used
+
+SmartWeb integrates directly with **Chrome’s built-in AI APIs**, specifically:
+
+*  **Prompt API** – To interact with the Gemini Nano model for generating and understanding text.
+*  **Writer API** – For writing and rewriting text intelligently.
+*  **Summarizer API** – To summarize web content directly from the page.
+
+These APIs allow all interactions to happen **on-device**, ensuring low latency and privacy by design.
+
+---
+
+##  Built With
+
+* **Languages:** JavaScript (ES6+), HTML5, CSS3
+* **Framework:** None (vanilla implementation for transparency and performance)
+* **Platform:** Chrome Extension (Manifest V3)
+* **APIs:** Prompt API, Writer API, Summarizer API (built-in Gemini Nano)
+* **Styling:** Tailwind CSS (custom build)
+
+---
+
+##  Project Structure
 
 ```
 smart-web-extension/
 ├── manifest.json           # Extension configuration
-├── content-script.js       # Script injected into web pages
-├── service-worker.js       # Background service worker
-├── sidepanel.html          # Side panel UI
-├── sidepanel.js            # Side panel logic
-├── icons/                  # Extension icons
+├── content-script.js       # Injected into web pages
+├── service-worker.js       # Background worker managing AI sessions
+├── sidepanel.html          # UI for the AI assistant
+├── sidepanel.js            # Logic for handling AI and UI interactions
+├── icons/                  # App and toolbar icons
 │   ├── icon16.png
 │   ├── icon48.png
 │   └── icon128.png
-└── README.md              # This file
+└── README.md               # This documentation
 ```
 
-## Prerequisites
+---
 
-- Google Chrome (version 88 or higher) or any Chromium-based browser
-- Basic understanding of Chrome extensions (for development)
+##  Installation & Testing Instructions
 
-## Installation & Running Locally
+### **1. Clone or Download the Project**
 
-### Step 1: Clone or Download the Project
+```bash
+git clone https://github.com/vivienogoun/smart-web-extension.git
+```
 
-If you haven't already, download or clone this repository to your local machine.
+### **2. Load the Extension in Chrome**
 
-### Step 2: Open Chrome Extensions Page
+1. Open `chrome://extensions/`
+2. Enable **Developer Mode**
+3. Click **Load unpacked** and select the `smart-web-extension` folder
+4. The SmartWeb icon (🧩) should appear in your toolbar
 
-1. Open Google Chrome
-2. Navigate to `chrome://extensions/`
-3. Alternatively, click the three-dot menu (⋮) → **Extensions** → **Manage Extensions**
+### **3. Activate Built-in AI Features**
 
-### Step 3: Enable Developer Mode
+1. In Chrome Canary or Dev version 128+
+2. Visit: `chrome://flags/#optimization-guide-on-device-model`
+3. Enable it and restart Chrome
+4. Go to `chrome://components` → Update **Optimization Guide On Device Model**
 
-1. In the top-right corner of the Extensions page, toggle on **Developer mode**
+### **4. Test the Extension**
 
-### Step 4: Load the Extension
+* Open any article, email, or text-rich page
+* Click the SmartWeb icon to open the side panel
+* Ask: “Summarize this article” or “Write a response for this email”
 
-1. Click the **Load unpacked** button that appears after enabling Developer mode
-2. Navigate to and select the `smart-web-extension` folder (the root directory containing `manifest.json`)
-3. Click **Select Folder**
+---
 
-### Step 5: Verify Installation
+##  Example Use Cases
 
-1. You should see "Contextual Browser Agent" appear in your list of extensions
-2. The extension icon should appear in your Chrome toolbar
-3. If you don't see the icon, click the puzzle piece icon (🧩) in the toolbar and pin the extension
+* **Summarize:** “Summarize this article in 5 key points.”
+* **Write:** “Write a LinkedIn comment agreeing with this post.”
+* **Explain:** “Explain this paragraph in simple terms.”
+* **Highlight:** “Highlight all company names on this page.”
 
-## Usage
+---
 
-### Opening the Side Panel
+##  Development & Debugging
 
-1. Click the extension icon in your Chrome toolbar
-2. The side panel will open on the right side of your browser
+* **Service Worker Logs:** `chrome://extensions` → Inspect service worker
+* **Side Panel Logs:** Right-click panel → Inspect
+* **Content Script:** Use browser DevTools → Console
 
-### Using the Agent
+### Live Reload
 
-1. Navigate to any web page you want to interact with
-2. Open the extension's side panel
-3. Enter a command in the text area, for example:
-   - "Highlight all dates and company names"
-   - "Find all email addresses on this page"
-   - "Summarize the main points"
-4. Click the **Process Page** button
-5. The extension will process your request and modify the page accordingly
+Each time you make changes:
 
-## Development
+1. Save files
+2. Go to `chrome://extensions`
+3. Click the **Reload (🔄)** button next to SmartWeb
 
-### Making Changes
+---
 
-1. Edit the relevant files in your project directory
-2. Save your changes
-3. Go to `chrome://extensions/`
-4. Click the refresh icon (🔄) on the "Contextual Browser Agent" card
-5. Reload any open tabs where you want to test the changes
+##  Permissions
 
-### Styling with Tailwind CSS
+* `activeTab` – Access and analyze current page content
+* `scripting` – Inject content scripts dynamically
+* `sidePanel` – Display SmartWeb’s UI
+* `storage` – Save settings and session memory
 
-This project uses a local Tailwind build so the extension only ships the purged stylesheet.
+---
 
-1. Install dependencies once with `npm install`
-2. Generate the production stylesheet with `npm run build:css`
-3. During active development, run `npm run watch:css` to rebuild on every save
+##  Technical Architecture
 
-The compiled file `sidepanel.css` is linked from `sidepanel.html`.
+**Flow:**
 
-### File Descriptions
+1. User inputs a natural language request in the side panel.
+2. The extension sends it to Chrome’s on-device **Prompt API** (Gemini Nano).
+3. The AI response is rendered in the panel and can modify or insert content in-page.
+4. Per-tab conversation context is preserved until tab closure.
 
-- **manifest.json**: Defines extension metadata, permissions, and configuration
-- **service-worker.js**: Handles background tasks and extension lifecycle events
-- **content-script.js**: Runs in the context of web pages to interact with page content
-- **sidepanel.html**: The HTML structure for the side panel UI
-- **sidepanel.js**: JavaScript logic for the side panel interactions
+All computation runs locally  no external servers or data transfers.
 
-### Debugging
+---
 
-- **Service Worker**: Go to `chrome://extensions/`, find your extension, and click "service worker" to open DevTools
-- **Side Panel**: Right-click in the side panel and select "Inspect" to open DevTools
-- **Content Script**: Open the page's DevTools (F12) and check the Console for any content script logs
+## 💡 Challenges & Learnings
 
-## Permissions
+* **Handling the OLD Prompt API:** We adapted a custom text-based protocol for reliability under truncation and missing schema support.
+* **UI/UX:** Designed a clean, light-themed conversational interface that shows AI “thinking” and separates user prompts from responses.
+* **Performance:** Achieved instant responses with chunk-based streaming for smoother updates.
+* **Privacy:** Everything runs on-device, no API keys or data sharing required.
 
-This extension requires the following permissions:
+---
 
-- **activeTab**: Access the currently active tab to read and modify content
-- **scripting**: Inject scripts into web pages for content processing
-- **sidePanel**: Display the side panel interface
-- **storage**: Store user preferences and settings
+## 🏆 Hackathon Eligibility
 
-## Troubleshooting
+SmartWeb meets all hackathon requirements:
 
-### Extension doesn't appear after loading
+| Requirement                   | Compliance                            |
+| ----------------------------- | ------------------------------------- |
+| Uses Chrome built-in AI APIs  | ✅ Prompt, Writer, Summarizer APIs     |
+| Built during hackathon period | ✅ Developed and tested for submission |
+| Runs on Chrome platform       | ✅ Chrome Extension (Manifest V3)      |
+| Supports English              | ✅ Fully in English                    |
+| Free for testing              | ✅ Public GitHub and demo available    |
 
-- Ensure Developer mode is enabled
-- Verify that you selected the correct folder containing `manifest.json`
-- Check for any errors displayed on the extension card
+---
 
-### Side panel doesn't open
+## 🔗 Links
 
-- Click the extension icon in the toolbar
-- Try reloading the extension from `chrome://extensions/`
-- Check the service worker console for errors
+* **GitHub Repository:** [https://github.com/vivienogoun/smart-web-extension](https://github.com/vivienogoun/smart-web-extension)
 
-### Changes not reflecting
 
-- Always click the refresh icon on the extension card after making changes
-- Reload any open tabs where you're testing the extension
-- Hard refresh pages with Ctrl+Shift+R (Windows/Linux) or Cmd+Shift+R (Mac)
+---
 
-## Version
+## 🧾 License
 
-Current version: **0.1.0**
+MIT License – free to use and extend.
 
-## License
+---
 
-[Add your license here]
+## 🙌 Contributors
 
-## Contributing
+* **Fred Agbona** – Software Engineer, AI UX & Chrome Extension Development
+* **Vivien Ogoun** – Technical Designer / Frontend Engineer
 
-[Add contribution guidelines here]
+---
 
-## Support
-
-For issues and questions, please [create an issue](https://github.com/vivienogoun/smart-web-extension/issues) on the GitHub repository.
+**SmartWeb – Chat with Your Tabs.**
+Built for the Chrome Built-in AI Hackathon 2025.
