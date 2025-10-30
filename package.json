@@ -1,0 +1,28 @@
+{
+  "name": "smart-web-extension",
+  "version": "1.0.0",
+  "description": "An AI-powered Chrome extension that helps you read, comprehend, and refine web content directly in your browser. This extension provides a side panel where you can interact with web pages using natural language commands.",
+  "main": "content-script.js",
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/tailwind.css -o ./sidepanel.css --minify",
+    "watch:css": "tailwindcss -i ./src/tailwind.css -o ./sidepanel.css --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vivienogoun/smart-web-extension.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/vivienogoun/smart-web-extension/issues"
+  },
+  "homepage": "https://github.com/vivienogoun/smart-web-extension#readme",
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.10"
+  }
+}

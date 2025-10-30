@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Contextual Browser Agent",
+  "name": "SmartWeb – Your Universal AI Side Panel",
   "version": "0.1.0",
-  "description": "An AI-powered agent to help you read, comprehend, and refine web content directly in your browser.",
-  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
+  "description": "SmartWeb lets you chat with your tabs and the web itself : summarize, write, and act on any page using Chrome’s Gemini Nano AI. Private. Fast. Effortless.",
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "service-worker.js"
   },
@@ -11,7 +12,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open Contextual Agent"
+    "default_title": "Open SmartWeb"
   },
   "icons": {
     "16": "icons/icon16.png",

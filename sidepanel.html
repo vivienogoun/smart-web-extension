@@ -3,63 +3,95 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Contextual Agent</title>
-    <style>
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        padding: 16px;
-        width: 300px;
-        background-color: #f9f9fb;
-        color: #1f1f1f;
-      }
-      h1 {
-        font-size: 18px;
-        margin-top: 0;
-        color: #333;
-      }
-      textarea {
-        width: 100%;
-        box-sizing: border-box;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        padding: 8px;
-        font-size: 14px;
-        margin-bottom: 12px;
-        min-height: 80px;
-        resize: vertical;
-      }
-      button {
-        width: 100%;
-        padding: 10px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #fff;
-        background-color: #007aff;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background-color 0.2s;
-      }
-      button:hover {
-        background-color: #0056b3;
-      }
-      #status {
-        margin-top: 12px;
-        font-size: 12px;
-        color: #666;
-      }
-    </style>
+    <title>SmartWeb – Your Universal AI Side Panel</title>
+    <link rel="stylesheet" href="sidepanel.css" />
   </head>
-  <body>
-    <h1>Contextual Agent</h1>
-    <p>What would you like to do with this page?</p>
-    <textarea
-      id="prompt-input"
-      placeholder="e.g., 'Highlight all dates and company names'"
-    ></textarea>
-    <button id="process-button">Process Page</button>
-    <div id="status"></div>
+  <body class="app-body">
+    <div class="panel-shell">
+      <div class="status-bar">
+        <span id="status" class="status-text" aria-live="polite"></span>
+        <div class="status-actions">
+          <button type="button" id="stop-button" class="status-btn" style="display: none;" title="Stop generation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <rect x="6" y="6" width="12" height="12" fill="currentColor" />
+            </svg>
+            Stop
+          </button>
+          <button type="button" id="reset-button" class="status-btn" title="Reset conversation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M4 12a8 8 0 0 1 14.93-4M20 12a8 8 0 0 1-14.93 4M4 8v4h4M20 16v-4h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <section class="response-section" aria-live="polite">
+        <h2 class="response-title">AI response</h2>
+        <div id="thinking-block" class="thinking-block hidden">
+          <div class="thinking-header">
+            <span class="thinking-title">Thinking...</span>
+            <div class="thinking-dots">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          <div id="thinking-context" class="thinking-context"></div>
+        </div>
+        <div id="response-area" class="response-area"></div>
+      </section>
+
+      <div class="composer-card">
+        <div class="context-section">
+          <div class="context-header">
+            <span class="context-title">Contexts</span>
+            <button type="button" id="clear-contexts" class="clear-btn">Clear</button>
+          </div>
+          <div id="context-area" class="context-area">
+            <div id="context-chips" aria-live="polite"></div>
+            <div id="tabs-dropdown"></div>
+          </div>
+        </div>
+
+        <div class="prompt-section">
+          <div class="prompt-field">
+            <div class="prompt-leading">
+              <div class="site-chip" id="site-chip">Current Page</div>
+            </div>
+            <textarea
+              id="prompt-input"
+              placeholder="Ask about this page… (e.g., 'Summarize', 'Draft a reply')"
+              rows="3"
+              aria-label="Ask about this page"
+            ></textarea>
+            <div class="prompt-toolbar" aria-hidden="true">
+              <button type="button" class="icon-button" tabindex="-1">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+              </button>
+              <button type="button" class="icon-button" tabindex="-1">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M5 8h14M5 12h10M5 16h6"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
+            <button id="process-button" class="send-button" title="Send" aria-label="Send prompt">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M3 21L21 12L3 3V10L16 12L3 14V21Z" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" role="status" aria-live="polite"></div>
 
     <script src="sidepanel.js"></script>
   </body>

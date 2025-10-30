@@ -1,170 +1,264 @@
-// service-worker.js
-// All logic is now contained in the service worker, no offscreen document needed.
+const LOG_PREFIX = "[Contextual Agent]";
+const CONTENT_SCRIPT_FILE = "content-script.js";
 
-// --- AI Schema ---
-const HIGHLIGHT_SCHEMA = {
-  type: "object",
-  properties: {
-    highlights: {
-      type: "array",
-      description:
-        "An array of exact text phrases from the document that should be highlighted based on the user's request.",
-      items: { type: "string" },
-    },
-  },
-  required: ["highlights"],
-};
+let activePanelTabId = null;
 
-// --- Event Listeners ---
 
-// 1. Open the side panel when the extension icon is clicked.
+function humanReadableError(error) {
+  if (!error) return "An unexpected error occurred.";
+  if (typeof error === "string") return error;
+  if (error?.message === "BAD_JSON") return "Model returned invalid JSON. Please try again.";
+  if (error?.message === "SUMMARY_SCHEMA_MISSING_CONTENT") return "Summary response missing TL;DR or bullets.";
+  if (error?.message === "WRITER_SCHEMA_MISSING_DRAFT") return "Writer response missing draft text.";
+  if (error?.message === "CORRECTION_SCHEMA_MISSING_TEXT") return "Correction response missing corrected text.";
+  if (error?.message === "LanguageModel API not supported in this browser.") return error.message;
+  return error?.message ?? "An unexpected error occurred.";
+}
+
+function errorCodeFromError(error) {
+  if (!error) return "UNKNOWN";
+  if (typeof error === "string") return error;
+  return error?.message ?? "UNKNOWN";
+}
+
+function buildErrorPayload(code, message) {
+  return { code, message };
+}
+
+async function injectContentScriptsIntoTabs(tabs = []) {
+  await Promise.all(
+    tabs
+      .filter((tab) => typeof tab?.id === "number")
+      .map((tab) =>
+        chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [CONTENT_SCRIPT_FILE] }).catch(() => null)
+      )
+  );
+}
+
 chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ windowId: tab.windowId });
+  if (!tab?.id || !tab?.windowId) return;
+  
+  // Open panel immediately to preserve user gesture
+  chrome.sidePanel.open({ windowId: tab.windowId }).then(() => {
+    activePanelTabId = tab.id;
+    ensureContentScriptsInjected(tab.windowId);
+  }).catch((error) => {
+    console.warn(`${LOG_PREFIX} failed to open panel`, error);
+  });
 });
 
-// 2. Listen for messages from the side panel.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message.action) {
-    case "processPage":
-      console.log("Service Worker received 'processPage' request.");
-      handlePageProcessing(message.prompt);
-      break;
+  if (!message || typeof message !== "object") {
+    return false;
+  }
 
-    case "checkAIModelStatus":
-      console.log("Service Worker received 'checkAIModelStatus' request.");
-      checkModelStatus();
+  switch (message.action) {
+    case "listTabs":
+      listTabs(sendResponse);
+      return true;
+    case "getTabText":
+      getTabText(message.tabId, sendResponse);
+      return true;
+    case "getSelectedText":
+      getSelectedText(message.tabId, sendResponse);
+      return true;
+    case "selectionUpdate":
+      sendResponse({ ok: true });
+      return false;
+    case "forwardSelectionUpdate":
+      forwardSelectionUpdate(message, sender);
+      sendResponse({ ok: true });
+      return true;
+    case "injectContentScripts":
+      injectContentScripts(sendResponse);
+      return true;
+    case "applyHighlights":
+      applyHighlightsToTab(message, sendResponse);
+      return true;
+    case "insertDraft":
+      insertDraftIntoTab(message, sendResponse);
+      return true;
+    case "replaceSelection":
+      replaceSelectionInTab(message, sendResponse);
+      return true;
+    default:
       break;
   }
-  return true; // Indicates we will respond asynchronously.
+
+  return false;
 });
 
-// --- Core Functions ---
+// Helpers ------------------------------------------------------------------
 
-/**
- * Checks the availability of the LanguageModel and sends an update to the side panel.
- */
+async function ensureContentScriptsInjected(windowId) {
+  try {
+    const query = typeof windowId === "number" ? { windowId } : { currentWindow: true };
+    const tabs = await chrome.tabs.query(query);
+    await injectContentScriptsIntoTabs(tabs);
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} failed to inject content scripts`, error);
+  }
+}
+
+function listTabs(sendResponse) {
+  (async () => {
+    try {
+      const tabs = await chrome.tabs.query({ currentWindow: true });
+      sendResponse({
+        tabs: tabs.map((tab) => ({
+          id: tab.id,
+          title: tab.title,
+          url: tab.url,
+          favIconUrl: tab.favIconUrl,
+        })),
+      });
+    } catch (error) {
+      sendResponse({ error: error?.message || "failed" });
+    }
+  })();
+}
+
+function getTabText(tabId, sendResponse) {
+  (async () => {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT_FILE] }).catch(() => null);
+      const response = await chrome.tabs.sendMessage(tabId, { action: "getTextContent" });
+      sendResponse({ text: response?.textContent ?? "" });
+    } catch (error) {
+      sendResponse({ error: error?.message || "failed" });
+    }
+  })();
+}
+
+function getSelectedText(tabId, sendResponse) {
+  (async () => {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT_FILE] }).catch(() => null);
+      const response = await chrome.tabs.sendMessage(tabId, { action: "getSelectedText" });
+      sendResponse({ text: response?.text ?? "" });
+    } catch (error) {
+      sendResponse({ error: error?.message || "failed" });
+    }
+  })();
+}
+
+function forwardSelectionUpdate(message, sender) {
+  const tabId = message.tabId ?? sender?.tab?.id ?? null;
+  try {
+    chrome.runtime.sendMessage(
+      { action: "selectionUpdate", tabId, text: message.text },
+      () => void chrome.runtime.lastError
+    );
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} failed to relay selection update`, error);
+  }
+}
+
+function applyHighlightsToTab(message, sendResponse) {
+  (async () => {
+    try {
+      const tabId = await resolveTargetTabId(message.targetTabId);
+      if (typeof tabId !== "number") {
+        sendResponse({ error: "No tab available to apply highlights." });
+        return;
+      }
+
+      await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT_FILE] }).catch(() => null);
+      const highlights = sanitizeStringArray(message.highlights);
+      await chrome.tabs.sendMessage(tabId, { action: "highlightText", highlights });
+      sendResponse({ ok: true });
+    } catch (error) {
+      sendResponse({ error: humanReadableError(error) });
+    }
+  })();
+}
+
+function insertDraftIntoTab(message, sendResponse) {
+  (async () => {
+    try {
+      const tabId = await resolveTargetTabId(message.targetTabId);
+      if (typeof tabId !== "number") {
+        sendResponse({ error: "No tab available to insert draft." });
+        return;
+      }
+
+      await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT_FILE] }).catch(() => null);
+      const draft = sanitizeString(message.draft);
+      const response = await chrome.tabs.sendMessage(tabId, { action: "insertDraft", draft });
+      sendResponse(response ?? { ok: true });
+    } catch (error) {
+      sendResponse({ error: humanReadableError(error) });
+    }
+  })();
+}
+
+function replaceSelectionInTab(message, sendResponse) {
+  (async () => {
+    try {
+      const tabId = await resolveTargetTabId(message.targetTabId);
+      if (typeof tabId !== "number") {
+        sendResponse({ error: "No tab available to replace selection." });
+        return;
+      }
+
+      await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT_FILE] }).catch(() => null);
+      const text = sanitizeString(message.text);
+      const response = await chrome.tabs.sendMessage(tabId, { action: "replaceSelection", text });
+      sendResponse(response ?? { ok: true });
+    } catch (error) {
+      sendResponse({ error: humanReadableError(error) });
+    }
+  })();
+}
+
+async function resolveTargetTabId(preferredTabId) {
+  if (typeof preferredTabId === "number") {
+    return preferredTabId;
+  }
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return activeTab?.id ?? null;
+}
+
+function injectContentScripts(sendResponse) {
+  (async () => {
+    try {
+      const tabs = await chrome.tabs.query({ currentWindow: true });
+      await injectContentScriptsIntoTabs(tabs);
+      sendResponse({ ok: true });
+    } catch (error) {
+      sendResponse({ error: error?.message || "failed" });
+    }
+  })();
+}
+
+// AI pipeline ---------------------------------------------------------------
+
 async function checkModelStatus() {
+  if (typeof LanguageModel === "undefined") {
+    emitStatus("unavailable", "LanguageModel API not supported in this browser.");
+    return;
+  }
+
   try {
     let status = await LanguageModel.availability();
-    console.log("AI Model Status:", status);
     if (status === "downloadable") {
+      emitStatus("downloading");
       const session = await LanguageModel.create({
-        monitor(m) {
-          m.addEventListener("downloadprogress", (e) => {
-            console.log(`Downloaded ${e.loaded * 100}%`);
+        monitor(monitor) {
+          monitor.addEventListener("downloadprogress", (event) => {
+            console.log(`${LOG_PREFIX} downloading model: ${Math.round(event.loaded * 100)}%`);
           });
         },
       });
       session.destroy();
       status = await LanguageModel.availability();
     }
-    chrome.runtime.sendMessage({
-      action: "ai-status-update",
-      status: status === "available" ? "ready" : status,
-    });
+
+    emitStatus(status === "available" ? "ready" : status);
   } catch (error) {
-    console.error("Error checking AI status:", error);
-    chrome.runtime.sendMessage({
-      action: "ai-status-update",
-      status: "unavailable",
-      error: error.message,
-    });
+    console.error(`${LOG_PREFIX} AI status check failed`, error);
+    emitStatus("unavailable", error?.message || "Failed to check model status.");
   }
 }
 
-/**
- * Orchestrates getting page content and then calling the AI.
- * @param {string} prompt The user's prompt from the side panel.
- */
-async function handlePageProcessing(prompt) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) return console.error("No active tab found.");
-
-  // Inject content script to get text
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ["content-script.js"],
-  });
-
-  // Get text from the content script
-  const response = await chrome.tabs.sendMessage(tab.id, {
-    action: "getTextContent",
-  });
-
-  if (response && response.textContent) {
-    // Now that we have the text, process it directly in the service worker
-    const aiResult = await processWithAI(response.textContent, prompt);
-
-    // Send the result to the content script for highlighting
-    if (aiResult && aiResult.highlights) {
-      chrome.tabs.sendMessage(tab.id, {
-        action: "highlightText",
-        highlights: aiResult.highlights,
-      });
-    }
-  } else {
-    console.error("Could not get text content from the page.");
-    chrome.runtime.sendMessage({
-      action: "ai-status-update",
-      status: "unavailable",
-      error: "Could not read page.",
-    });
-  }
-}
-
-/**
- * Processes text with the user's prompt using the built-in LanguageModel.
- * (This logic was previously in offscreen.js)
- * @param {string} textContent The text from the webpage.
- * @param {string} userPrompt The natural language command from the user.
- * @returns {object|null} The parsed JSON result from the AI or null on error.
- */
-async function processWithAI(textContent, userPrompt) {
-  console.log("Service Worker: Processing with AI...");
-  chrome.runtime.sendMessage({
-    action: "ai-status-update",
-    status: "processing",
-  });
-
-  try {
-    const session = await LanguageModel.create();
-
-    const fullPrompt = `
-      You are an intelligent assistant that analyzes web page content.
-      The user wants to find and highlight specific information in the provided document.
-      
-      USER REQUEST: "${userPrompt}"
-      
-      DOCUMENT TEXT (first 4000 characters):
-      ---
-      ${textContent.substring(0, 4000)} 
-      ---
-      
-      Analyze the document and extract the exact phrases that match the user's request.
-    `;
-
-    const stream = await session.promptStreaming(fullPrompt, {
-      responseConstraint: HIGHLIGHT_SCHEMA,
-    });
-
-    let fullResult = "";
-    for await (const chunk of stream) {
-      fullResult += chunk;
-    }
-
-    console.log("Service Worker: AI Raw Result:", fullResult);
-    const parsedResult = JSON.parse(fullResult);
-
-    session.destroy();
-    chrome.runtime.sendMessage({ action: "ai-status-update", status: "ready" });
-    return parsedResult;
-  } catch (error) {
-    console.error("Service Worker: Error processing with AI:", error);
-    chrome.runtime.sendMessage({
-      action: "ai-status-update",
-      status: "unavailable",
-      error: error.message,
-    });
-    return null;
-  }
-}
