@@ -395,17 +395,27 @@ function parseTextProtocol(text) {
       continue;
     }
     
-    if (lineUpper === 'DRAFT:') {
+    if (lineUpper === 'DRAFT:' || lineUpper.startsWith('DRAFT:')) {
       currentSection = 'draft';
       collectingMultiline = true;
       multilineBuffer = [];
+      // Check if content is on the same line as the label
+      const contentAfterLabel = line.substring(6).trim();
+      if (contentAfterLabel) {
+        multilineBuffer.push(contentAfterLabel);
+      }
       continue;
     }
     
-    if (lineUpper === 'CORRECTION:') {
+    if (lineUpper === 'CORRECTION:' || lineUpper.startsWith('CORRECTION:')) {
       currentSection = 'correction';
       collectingMultiline = true;
       multilineBuffer = [];
+      // Check if content is on the same line as the label
+      const contentAfterLabel = line.substring(11).trim();
+      if (contentAfterLabel) {
+        multilineBuffer.push(contentAfterLabel);
+      }
       continue;
     }
     
@@ -472,7 +482,12 @@ function parseTextProtocol(text) {
   }
   
   // Build response object based on intent
-  const result = { intent };
+  const result = {};
+  
+  // Only add intent if we have one
+  if (intent) {
+    result.intent = intent;
+  }
   
   if (intent === 'SUMMARIZE') {
     result.summary = {
@@ -485,10 +500,28 @@ function parseTextProtocol(text) {
     result.correction = correction || 'Correction not available';
   } else if (intent === 'HIGHLIGHT') {
     result.highlights = highlights.length > 0 ? highlights : ['No highlights found'];
+  } else {
+    // No valid intent found - try to build something from what we have
+    if (draft) {
+      result.intent = 'WRITE';
+      result.draft = draft;
+    } else if (correction) {
+      result.intent = 'CORRECT';
+      result.correction = correction;
+    } else if (highlights.length > 0) {
+      result.intent = 'HIGHLIGHT';
+      result.highlights = highlights;
+    } else if (tldr || bullets.length > 0) {
+      result.intent = 'SUMMARIZE';
+      result.summary = {
+        tldr: tldr || 'Summary not available',
+        bullets: bullets.length > 0 ? bullets : ['Content summary']
+      };
+    }
   }
   
-  const inferredNote = intent && !lines.some(l => l.toUpperCase().startsWith('INTENT:')) ? ' (inferred)' : '';
-  console.debug(`${LOG_PREFIX} parsed text protocol: intent=${intent}${inferredNote}, sections=${Object.keys(result).join(',')}`);
+  const inferredNote = result.intent && !lines.some(l => l.toUpperCase().startsWith('INTENT:')) ? ' (inferred)' : '';
+  console.debug(`${LOG_PREFIX} parsed text protocol: intent=${result.intent}${inferredNote}, sections=${Object.keys(result).join(',')}`);
   return result;
 }
 
@@ -1252,8 +1285,27 @@ async function handleProcessClick() {
     
     if (PromptAPIAdapter.apiType === 'old') {
       // OLD API: Use text protocol (truncation-tolerant, no retry needed)
-      console.debug(`${LOG_PREFIX} parsing with TEXT protocol`);
-      let parsed = parseTextProtocol(fullResponse);
+      console.log(`${LOG_PREFIX} parsing with TEXT protocol`);
+      console.log(`${LOG_PREFIX} raw response:`, fullResponse);
+      
+      let parsed;
+      
+      // Check if model returned JSON instead of text protocol
+      const trimmedResponse = fullResponse.trim();
+      if (trimmedResponse.startsWith('{') || trimmedResponse.startsWith('[')) {
+        console.log(`${LOG_PREFIX} model returned JSON instead of text protocol, parsing as JSON`);
+        try {
+          parsed = sanitizeJSON(fullResponse);
+        } catch (jsonError) {
+          console.warn(`${LOG_PREFIX} JSON parsing failed, falling back to text protocol:`, jsonError);
+          parsed = parseTextProtocol(fullResponse);
+        }
+      } else {
+        // Use text protocol parser
+        parsed = parseTextProtocol(fullResponse);
+      }
+      
+      console.log(`${LOG_PREFIX} parsed result:`, JSON.stringify(parsed, null, 2));
       
       // Coerce intent if missing (infer from sections present)
       if (!parsed.intent) {
