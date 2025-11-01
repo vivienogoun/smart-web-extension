@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SmartWeb – Your Universal AI Side Panel",
-  "version": "0.1.0",
-  "description": "SmartWeb lets you chat with your tabs and the web itself : summarize, write, and act on any page using Chrome’s Gemini Nano AI. Private. Fast. Effortless.",
+  "version": "0.0.1",
+  "description": "SmartWeb lets you chat with your tabs and the web itself : summarize, write, and act on any page. Private. Fast. Effortless.",
   "permissions": ["activeTab", "scripting", "sidePanel", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": {
